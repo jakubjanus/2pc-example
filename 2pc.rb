@@ -1,3 +1,5 @@
+require 'securerandom'
+
 class Coordinator
 
   def initialize(workers)
@@ -5,10 +7,13 @@ class Coordinator
   end
 
   def tx(instructions)
-    if instructions.all?(&:can_commit?)
-      instructions.each(&:commit!)
+    session_id = SecureRandom.uuid
+    instructions.each { |instruction| instruction.apply(session_id) }
+
+    if @workers.all? { |worker| worker.can_commit?(session_id) }
+      @workers.each { |worker| worker.commit!(session_id) }
     else
-      instructions.each(&:rollback)
+      @workers.each { |worker| worker.rollback(session_id) }
     end
   end
 
@@ -22,75 +27,78 @@ class Worker
     @value = value
     @rules = []
     @semaphore = Mutex.new
-    @current_command = nil
+    @sessions = {}
+    @current_session = nil
   end
 
   def add_rule(rule)
     @rules.push(rule)
   end
 
-  def apply(command)
+  def apply(command, session)
     @semaphore.synchronize do
-      raise LockNotObtained unless @current_command.nil?
-
-      @current_command = command
+      (@sessions[session] ||= []).push(command)
     end
   end
 
-  def can_commit?(command)
-    return false unless command == @current_command
+  def can_commit?(session)
+    @semaphore.synchronize do
+      return false unless @current_session.nil?
 
-    @new_value = @current_command.execute(@value)
+      @current_session = session
+    end
 
-    @rules.all? { |rule| rule.call(@new_value) }
+    commands = @sessions[@current_session]
+    @rules.all? do |rule|
+      new_value = @value
+      commands.all? do |command|
+        new_value = command.execute(new_value)
+        rule.call(new_value)
+      end
+    end
   end
 
-  def commit!(command)
-    raise 'Cannot commit this command' unless command == @current_command
+  def commit!(session)
+    raise 'Cannot commit this command' unless session == @current_session
 
-    @value = @new_value
-    release
-    true
+    commands = @sessions[@current_session]
+    @semaphore.synchronize do
+      commands.each do |command|
+        @value = command.execute(@value)
+      end
+    end
+
+    release(session)
   end
 
-  def rollback(command)
-    return unless command == @current_command
-
-    release
-    true
+  def rollback(session)
+    release(session)
   end
 
   attr_reader :value
 
   private
 
-  def release
+  def release(session)
     @semaphore.synchronize do
-      @new_value = nil
-      @current_command = nil
+      @sessions.delete(session)
+      @current_session = nil if session == @current_session
     end
   end
 
 end
 
 class Instruction
+
   def initialize(worker, command)
     @worker = worker
     @command = command
   end
 
-  def can_commit?
-    @worker.apply(@command)
-    @worker.can_commit?(@command)
+  def apply(session_id)
+    @worker.apply(@command, session_id)
   end
 
-  def commit!
-    @worker.commit!(@command)
-  end
-
-  def rollback
-    @worker.rollback(@command)
-  end
 end
 
 class AddCommand
@@ -135,7 +143,8 @@ t2 = Thread.new do
 
   instructions = [
     Instruction.new(worker_1, AddCommand.new(-11)),
-    Instruction.new(worker_2, AddCommand.new(20))
+    Instruction.new(worker_2, AddCommand.new(20)),
+    Instruction.new(worker_1, AddCommand.new(1))
   ]
   coordinator.tx(instructions)
 end
@@ -148,7 +157,3 @@ puts 'End values:'
 puts "worker_1: #{worker_1.value}"
 puts "worker_2: #{worker_2.value}"
 
-# BEGIN
-# ADD x, 1
-# SUB y, 2
-# COMMIT
