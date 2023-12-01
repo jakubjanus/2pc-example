@@ -11,6 +11,8 @@ class Coordinator
   def tx(session_id = nil, &block)
     session_id ||= SecureRandom.uuid
 
+    puts "--> starting tx: #{session_id}"
+
     executor = lambda do |instruction|
       vote = instruction.worker.prepare(instruction.command, session_id)
 

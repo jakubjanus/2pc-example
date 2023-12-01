@@ -17,6 +17,7 @@ class Worker
 
   def prepare(command, session)
     @semaphore.synchronize do
+      puts "--> [Worker #{@name}][session #{session}] command: #{command}"
       return false unless @current_session.nil? || @current_session == session
 
       @current_session = session
@@ -30,7 +31,7 @@ class Worker
   def commit!(session)
     raise 'Cannot commit this command' unless session == @current_session
 
-    puts "--> [Worker #{@name}] committing #{session}"
+    puts "--> [Worker #{@name}][session #{session}] committing"
 
     @semaphore.synchronize do
       @value = @sessions_values[session]
@@ -40,7 +41,7 @@ class Worker
   end
 
   def rollback(session)
-    puts "--> [Worker #{@name}] rollbacking #{session}"
+    puts "--> [Worker #{@name}][session #{session}] rollback"
 
     release(session)
   end
