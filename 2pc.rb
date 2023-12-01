@@ -15,35 +15,32 @@ t1 = Thread.new do
   wait = rand(1000)
   sleep(wait / 1000.0)
 
-  instructions = [
-    Instruction.new(worker_a, AddCommand.new(5)),
-    Instruction.new(worker_b, AddCommand.new(44))
-  ]
-  coordinator.tx(instructions, 't1')
+  coordinator.tx('t1') do |executor|
+    executor.call Instruction.new(worker_a, AddCommand.new(5))
+    executor.call Instruction.new(worker_b, AddCommand.new(44))
+  end
 end
 
 t2 = Thread.new do
   wait = rand(1000)
   sleep(wait / 1000.0)
 
-  instructions = [
-    Instruction.new(worker_a, AddCommand.new(-11)),
-    Instruction.new(worker_b, AddCommand.new(20)),
-    Instruction.new(worker_a, AddCommand.new(1))
-  ]
-  coordinator.tx(instructions, 't2')
+  coordinator.tx('t2') do |executor|
+    executor.call Instruction.new(worker_a, AddCommand.new(-11))
+    executor.call Instruction.new(worker_b, AddCommand.new(20))
+    executor.call Instruction.new(worker_a, AddCommand.new(1))
+  end
 end
 
 t3 = Thread.new do
   wait = rand(1000)
   sleep(wait / 1000.0)
 
-  instructions = [
-    Instruction.new(worker_b, AddCommand.new(5)),
-    Instruction.new(worker_a, AddCommand.new(3)),
-    Instruction.new(worker_b, AddCommand.new(5))
-  ]
-  coordinator.tx(instructions, 't3')
+  coordinator.tx('t3') do |executor|
+    executor.call Instruction.new(worker_a, AddCommand.new(3))
+    executor.call Instruction.new(worker_b, AddCommand.new(5))
+    executor.call Instruction.new(worker_b, AddCommand.new(1))
+  end
 end
 
 t1.join

@@ -4,9 +4,12 @@ class AddCommand
     @addition = addition
   end
 
-
   def execute(value)
     value + @addition
+  end
+
+  def to_s
+    "ADD #{@addition}"
   end
 
 end

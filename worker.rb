@@ -7,7 +7,7 @@ class Worker
     @value = value
     @rules = []
     @semaphore = Mutex.new
-    @sessions = {}
+    @sessions_values = {}
     @current_session = nil
   end
 
@@ -15,26 +15,15 @@ class Worker
     @rules.push(rule)
   end
 
-  def apply(command, session)
+  def prepare(command, session)
     @semaphore.synchronize do
-      (@sessions[session] ||= []).push(command)
-    end
-  end
-
-  def can_commit?(session)
-    @semaphore.synchronize do
-      return false unless @current_session.nil?
+      return false unless @current_session.nil? || @current_session == session
 
       @current_session = session
-    end
+      new_value_candidate = command.execute(@sessions_values[session] || @value)
+      @sessions_values[session] = new_value_candidate
 
-    commands = @sessions[@current_session]
-    @rules.all? do |rule|
-      new_value = @value
-      commands.all? do |command|
-        new_value = command.execute(new_value)
-        rule.call(new_value)
-      end
+      @rules.all? { |rule| rule.call(new_value_candidate) }
     end
   end
 
@@ -43,11 +32,8 @@ class Worker
 
     puts "--> [Worker #{@name}] committing #{session}"
 
-    commands = @sessions[@current_session]
     @semaphore.synchronize do
-      commands.each do |command|
-        @value = command.execute(@value)
-      end
+      @value = @sessions_values[session]
     end
 
     release(session)
@@ -65,7 +51,7 @@ class Worker
 
   def release(session)
     @semaphore.synchronize do
-      @sessions.delete(session)
+      @sessions_values.delete(session)
       @current_session = nil if session == @current_session
     end
   end

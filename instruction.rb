@@ -5,8 +5,6 @@ class Instruction
     @command = command
   end
 
-  def apply(session_id)
-    @worker.apply(@command, session_id)
-  end
+  attr_reader :worker, :command
 
 end
